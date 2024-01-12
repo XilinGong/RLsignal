@@ -81,10 +81,15 @@ def playLoc():
     state[1001] = (srange[0]+srange[1])/2
     state[1002] = (drange[0]+drange[1])/2
     state[1003] = max(srange[1]-srange[0], drange[1]-drange[0])/2
-    
-    while not done:
-        action0 = agent.choose_action(state)
-        oldstate, action, reward, new_state, done = step(state, action0, label)
-        agent.store_transition(oldstate, action0, reward, new_state, done)
+    action_old = agent.choose_action(state)
+    for i in range(Config().memory_size):
+        oldstate, action_old, reward, new_state, done = step(state, action_old, label)
+        agent.store_transition(oldstate, action_old, reward, new_state, done)
+        action_new = agent.choose_action(new_state)
+        # new step
+        state = new_state
+        action_old = action_new
+    agent.learn()
+         
     
     

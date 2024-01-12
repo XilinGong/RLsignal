@@ -1,6 +1,7 @@
 class Config():
     def __init__(self):
-        self.memory_size = 1000
+        self.memory_size = 100000
+        self.max_episode = 30
         self.gamma = 0.90
         self.epsilon = 0.05
         self.epsilon_min = 0.005
