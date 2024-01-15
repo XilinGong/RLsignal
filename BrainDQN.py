@@ -15,15 +15,13 @@ from torch.autograd import Variable
 ACTIONS = 2    # total available action number for the game: UP and DO NOTHING
 
 class BrainDQN(nn.Module):
-	empty_frame = np.zeros((128, 72), dtype=np.float32)
-	empty_state = np.stack((empty_frame, empty_frame, empty_frame, empty_frame), axis=0)
+	empty_state = np.zeros((1000 + 2 + 1 + 2 * 20))
 
-	def __init__(self, epsilon, mem_size, cuda):
+	def __init__(self, epsilon, mem_size, state_size, action_size, cuda):
 		"""Initialization
-
-		   epsilon: initial epsilon for exploration
-                   mem_size: memory size for experience replay
-                   cuda: use cuda or not
+		epsilon: initial epsilon for exploration
+                mem_size: memory size for experience replay
+                cuda: use cuda or not
 		"""
 		super(BrainDQN, self).__init__()
 		self.train = None
@@ -34,45 +32,46 @@ class BrainDQN(nn.Module):
 		self.epsilon = epsilon
 		self.actions = ACTIONS
 		self.mem_size = mem_size
-                self.use_cuda = cuda
+        self.use_cuda = cuda
+        self.state_size = state_size
+        self.action_size = action_size
 		# init Q network
-		self.createQNetwork()
+		self.createQNetwork(self.state_size, self.action_size)
 
 	def createQNetwork(self):
 		""" Create dqn, invoked by `__init__`
-
-		    model structure: conv->conv->fc->fc
-			change it to your new design
+		model structure: conv->conv->fc->fc
+		change it to your new design
 		"""
-		self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4, padding=2)
+		self.linear1 = nn.Linear(self.state_size, 512)
 		self.relu1 = nn.ReLU(inplace=True)
-		self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1)
+		self.linear2 = nn.Linear(512, 1024)
 		self.relu2 = nn.ReLU(inplace=True)
-		self.map_size = (64, 16, 9)
-		self.fc1 = nn.Linear(self.map_size[0]*self.map_size[1]*self.map_size[2], 256)
+		self.linear3 = nn.Linear(1024, 1024)
 		self.relu3 = nn.ReLU(inplace=True)
-		self.fc2 = nn.Linear(256, self.actions)
+  		self.linear4 = nn.Linear(1024, 512)
+		self.relu4 = nn.ReLU(inplace=True)
+		self.linear5 = nn.Linear(512, self.actions)
 
 	def get_q_value(self, o):
 		"""Get Q value estimation w.r.t. current observation `o`
-
-		   o -- current observation
+		o -- current observation
 		"""
 		# get Q estimation
-		out = self.conv1(o)
+		out = self.linear1(o)
 		out = self.relu1(out)
-		out = self.conv2(out)
+		out = self.linear2(out)
 		out = self.relu2(out)
-		out = out.view(out.size()[0], -1)
-		out = self.fc1(out)
+		out = self.linear3(out)
 		out = self.relu3(out)
-		out = self.fc2(out)
+		out = self.linear4(out)
+		out = self.relu4(out)
+		out = self.linear5(out)
 		return out
 
 	def forward(self, o):
 		"""Forward procedure to get MSE loss
-
-		   o -- current observation
+		o -- current observation
 		"""
 		# get Q(s,a;\theta)
 		q = self.get_q_value(o)
@@ -90,8 +89,7 @@ class BrainDQN(nn.Module):
 
 	def set_initial_state(self, state=None):
 		"""Set initial state
-
-		   state: initial state. if None, use `BrainDQN.empty_state`
+		state: initial state. if None, use `BrainDQN.empty_state`
 		"""
 		if state is None:
 			self.current_state = BrainDQN.empty_state
@@ -101,13 +99,12 @@ class BrainDQN(nn.Module):
 
 	def store_transition(self, o_next, action, reward, terminal):
 		"""Store transition (\fan_t, a_t, r_t, \fan_{t+1})
-
-		   o_next: next observation, \fan_{t+1}
-		   action: action, a_t
-		   reward: reward, r_t
-		   terminal: terminal(\fan_{t+1})
+		o_next: next observation, \fan_{t+1}
+		action: action, a_t
+		reward: reward, r_t
+		terminal: terminal(\fan_{t+1})
 		"""
-		next_state = np.append(self.current_state[1:,:,:], o_next.reshape((1,)+o_next.shape), axis=0)
+		next_state = o_next
 		self.replay_memory.append((self.current_state, action, reward, next_state, terminal))
 		if len(self.replay_memory) > self.mem_size:
 			self.replay_memory.popleft()
@@ -130,8 +127,8 @@ class BrainDQN(nn.Module):
 		"""
 		state = self.current_state
 		state_var = Variable(torch.from_numpy(state), volatile=True).unsqueeze(0)
-                if self.use_cuda:
-                    state_var = state_var.cuda()
+        if self.use_cuda:
+            state_var = state_var.cuda()
 		q_value = self.forward(state_var)
 		_, action_index = torch.max(q_value, dim=1)
 		action_index = action_index.data[0][0]

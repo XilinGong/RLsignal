@@ -10,29 +10,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 
-import PIL.Image as Image
-
-IMAGE_SIZE = (72, 128)
-
-def preprocess(frame):
-    """Do preprocessing: resize and binarize.
-
-       Downsampling to 128x72 size and convert to grayscale
-       frame -- input frame, rgb image with 512x288 size
-    """
-    im = Image.fromarray(frame).resize(IMAGE_SIZE).convert(mode='L')
-    out = np.asarray(im).astype(np.float32)
-    out[out <= 1.] = 0.0
-    out[out > 1.] = 1.0
-    return out
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     """Save checkpoint model to disk
 
         state -- checkpoint state: model weight and other info
-                 binding by user
+                binding by user
         is_best -- if the checkpoint is the best. If it is, then
-                   save as a best model
+                save as a best model
     """
     torch.save(state, filename)
     if is_best:
@@ -41,8 +26,8 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
 def load_checkpoint(filename, model):
     """Load previous checkpoint model
 
-       filename -- model file name
-       model -- DQN model
+    filename -- model file name
+    model -- DQN model
     """
     try:
         checkpoint = torch.load(filename)
@@ -63,12 +48,11 @@ def load_checkpoint(filename, model):
 
 def train_dqn(model, options, resume):
     """Train DQN
-
-       model -- DQN model
-       lr -- learning rate
-       max_episode -- maximum episode
-       resume -- resume previous model
-       model_name -- checkpoint file name
+    model -- DQN model
+    lr -- learning rate
+    max_episode -- maximum episode
+    resume -- resume previous model
+    model_name -- checkpoint file name
     """
     best_time_step = 0.
     if resume:
@@ -79,36 +63,37 @@ def train_dqn(model, options, resume):
         _, _, best_time_step = load_checkpoint(options.weight, model)
 
     flappyBird = game.GameState()
-    optimizer = optim.RMSprop(model.parameters(), lr=options.lr)
+    optimizer = optim.Adam(model.parameters(), lr=options.lr)
     ceriterion = nn.MSELoss()
 
-    action = [1, 0]
-    o, r, terminal = flappyBird.frame_step(action)
-    o = preprocess(o)
+    action = [1, 0, 0, 0]
+    state_0 = np.zeros((1000 + 2 + 1 + 2 * 20))
+    state, r, terminal = flappyBird.step(action, state_0)
     model.set_initial_state()
 
     if options.cuda:
         model = model.cuda()
     # in the first `OBSERVE` time steos, we dont train the model
-    for i in xrange(options.observation):
+    for i in range(options.observation):
         action = model.get_action_randomly()
-        o, r, terminal = flappyBird.frame_step(action)
-        o = preprocess(o)
-        model.store_transition(o, action, r, terminal)
+        state_next, r, terminal = flappyBird.step(action, state)
+        model.store_transition(state_next, action, r, terminal)
+        state = state_next
     # start training
-    for episode in xrange(options.max_episode):
+    for episode in range(options.max_episode):
         model.time_step = 0
         model.set_train()
         total_reward = 0.
+        state= np.zeros((1000 + 2 + 1 + 2 * 20))
         # begin an episode!
         while True:
             optimizer.zero_grad()
             action = model.get_action()
-            o_next, r, terminal = flappyBird.frame_step(action)
+            state_next, r, terminal = flappyBird.step(action, state)
             total_reward += options.gamma**model.time_step * r
-            o_next = preprocess(o_next)
-            model.store_transition(o_next, action, r, terminal)
+            model.store_transition(state_next, action, r, terminal)
             model.increase_time_step()
+            state = state_next
             # Step 1: obtain random minibatch from replay memory
             minibatch = random.sample(model.replay_memory, options.batch_size)
             state_batch = np.array([data[0] for data in minibatch])
@@ -117,7 +102,7 @@ def train_dqn(model, options, resume):
             next_state_batch = np.array([data[3] for data in minibatch])
             state_batch_var = Variable(torch.from_numpy(state_batch))
             next_state_batch_var = Variable(torch.from_numpy(next_state_batch),
-                                           volatile=True)
+                                        volatile=True)
             if options.cuda:
                 state_batch_var = state_batch_var.cuda()
                 next_state_batch_var = next_state_batch_var.cuda()
@@ -129,7 +114,7 @@ def train_dqn(model, options, resume):
             y = reward_batch.astype(np.float32)
             max_q, _ = torch.max(q_value_next, dim=1)
 
-            for i in xrange(options.batch_size):
+            for i in range(options.batch_size):
                 if not minibatch[i][4]:
                     y[i] += options.gamma*max_q.data[i][0]
 
@@ -172,7 +157,7 @@ def train_dqn(model, options, resume):
                 'epsilon': model.epsilon,
                 'state_dict': model.state_dict(),
                 'time_step': ave_time,
-                 }, False, 'checkpoint-episode-%d.pth.tar' %episode)
+                }, False, 'checkpoint-episode-%d.pth.tar' %episode)
         else:
             continue
         print 'save checkpoint, episode={}, ave time step={:.2f}'.format(
@@ -186,19 +171,19 @@ def test_dqn(model, episode):
     """
     model.set_eval()
     ave_time = 0.
-    for test_case in xrange(5):
+    for test_case in range(5):
         model.time_step = 0
+        state= np.zeros((1000 + 2 + 1 + 2 * 20))
         flappyBird = game.GameState()
-        o, r, terminal = flappyBird.frame_step([1, 0])
-        o = preprocess(o)
+        state, r, terminal = flappyBird.step([1, 0, 0, 0], state)
         model.set_initial_state()
         while True:
             action = model.get_optim_action()
-            o, r, terminal = flappyBird.frame_step(action)
+            state_next, r, terminal = flappyBird.step(action, state)
+            state = state_next
             if terminal:
                 break
-            o = preprocess(o)
-            model.current_state = np.append(model.current_state[1:,:,:], o.reshape((1,)+o.shape), axis=0)
+            model.current_state = state_next
             model.increase_time_step()
         ave_time += model.time_step
     ave_time /= 5
@@ -219,16 +204,16 @@ def play_game(model_file_name, cuda=False, best=True):
     model.set_eval()
     bird_game = game.GameState()
     model.set_initial_state()
+    state= np.zeros((1000 + 2 + 1 + 2 * 20))
     if cuda:
         model = model.cuda()
     while True:
         action = model.get_optim_action()
-        o, r, terminal = bird_game.frame_step(action)
+        state_next, r, terminal = bird_game.step(action, state)
+        state = state_next
         if terminal:
             break
-        o = preprocess(o)
 
-        model.current_state = np.append(model.current_state[1:,:,:], o.reshape((1,)+o.shape), axis=0)
-
+        model.current_state = state_next
         model.increase_time_step()
     print 'total time step is {}'.format(model.time_step)
