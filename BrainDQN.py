@@ -12,12 +12,12 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-ACTIONS = 2    # total available action number for the game: UP and DO NOTHING
+ACTIONS = 4    # total available action number for the game: UP and DO NOTHING
 
 class BrainDQN(nn.Module):
 	empty_state = np.zeros((1000 + 2 + 1 + 2 * 20))
 
-	def __init__(self, epsilon, mem_size, state_size, action_size, cuda):
+	def __init__(self, epsilon, mem_size, cuda, state_size=1000+2+1+20, action_size=4):
 		"""Initialization
 		epsilon: initial epsilon for exploration
                 mem_size: memory size for experience replay
@@ -32,11 +32,11 @@ class BrainDQN(nn.Module):
 		self.epsilon = epsilon
 		self.actions = ACTIONS
 		self.mem_size = mem_size
-        self.use_cuda = cuda
-        self.state_size = state_size
-        self.action_size = action_size
+		self.use_cuda = cuda
+		self.state_size = state_size
+		self.action_size = action_size
 		# init Q network
-		self.createQNetwork(self.state_size, self.action_size)
+		self.createQNetwork()
 
 	def createQNetwork(self):
 		""" Create dqn, invoked by `__init__`
@@ -45,15 +45,16 @@ class BrainDQN(nn.Module):
 		"""
 		self.linear1 = nn.Linear(self.state_size, 512)
 		self.relu1 = nn.ReLU(inplace=True)
-		self.linear2 = nn.Linear(512, 1024)
+		self.linear2 = nn.Linear(512, 256)
 		self.relu2 = nn.ReLU(inplace=True)
-		self.linear3 = nn.Linear(1024, 1024)
+		self.linear3 = nn.Linear(256, 256)
 		self.relu3 = nn.ReLU(inplace=True)
-  		self.linear4 = nn.Linear(1024, 512)
+		self.linear4 = nn.Linear(256, 128)
 		self.relu4 = nn.ReLU(inplace=True)
-		self.linear5 = nn.Linear(512, self.actions)
+		self.linear5 = nn.Linear(128, self.actions)
 
 	def get_q_value(self, o):
+		o = o.to(torch.float32)
 		"""Get Q value estimation w.r.t. current observation `o`
 		o -- current observation
 		"""
@@ -110,15 +111,20 @@ class BrainDQN(nn.Module):
 			self.replay_memory.popleft()
 		if not terminal:
 			self.current_state = next_state
-		else:
-			self.set_initial_state()
 
 	def get_action_randomly(self):
 		"""Get action randomly
 		"""
 		action = np.zeros(self.actions, dtype=np.float32)
-		#action_index = random.randrange(self.actions)
-		action_index = 0 if random.random() < 0.8 else 1
+		random_number = random.random()
+		if random_number < 0.25:
+			action_index = 0
+		elif random_number < 0.5:
+			action_index = 1
+		elif random_number < 0.75:
+			action_index = 2
+		else:
+			action_index =3
 		action[action_index] = 1
 		return action
 
@@ -127,11 +133,12 @@ class BrainDQN(nn.Module):
 		"""
 		state = self.current_state
 		state_var = Variable(torch.from_numpy(state), volatile=True).unsqueeze(0)
-        if self.use_cuda:
-            state_var = state_var.cuda()
+		if self.use_cuda:
+			state_var = state_var.cuda()
 		q_value = self.forward(state_var)
 		_, action_index = torch.max(q_value, dim=1)
-		action_index = action_index.data[0][0]
+	
+		action_index = action_index.data[0]
 		action = np.zeros(self.actions, dtype=np.float32)
 		action[action_index] = 1
 		return action

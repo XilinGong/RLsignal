@@ -1,7 +1,7 @@
-lr=0.0001
+lr=0.001
 gamma=0.99
 batch_size=32
-mem_size=5000
+mem_size=10000
 initial_epsilon=1.
 final_epsilon=0.1
 observation=100
