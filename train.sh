@@ -1,10 +1,10 @@
-lr=0.001
+lr=0.0001
 gamma=0.99
 batch_size=32
-mem_size=10000
+mem_size=50
 initial_epsilon=1.
 final_epsilon=0.1
-observation=100
+observation=50
 exploration=50000
 max_episode=100000
 # for fine tuning, uncomment this
